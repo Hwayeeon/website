@@ -1,103 +1,63 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-
   pull_request:
-    branches:
-      - main
+    branches: [ "*" ]
+  push:
+    branches: [ "main" ]
+  merge_group:
+
+# You can leverage Vercel Remote Caching with Turbo to speed up your builds
+# @link https://turborepo.org/docs/core-concepts/remote-caching#remote-caching-on-vercel-builds
+# env:
+#  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+#  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
 
 jobs:
-  lint:
+  build-lint:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16.1
+        env:
+          POSTGRES_USER: default
+          POSTGRES_PASSWORD: default
+          POSTGRES_DB: verceldb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
+      - name: Copy env
+        shell: bash
+        run: cp .env.example .env.local
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-          cache: pnpm
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v1
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm run lint
-
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
-        run: pnpm run typecheck
-
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Install lib
+        run: bun i
 
       - name: Build
-        run: pnpm run build
+        run: bun run build
+        env:
+          # The hostname used to communicate with the PostgreSQL service container
+          POSTGRES_HOST: postgres
+          # The default PostgreSQL port
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: default
+          POSTGRES_PASSWORD: default
+          POSTGRES_DB: verceldb
+          POSTGRES_URL: postgres://default:default@localhost:5432/verceldb
 
-  generate:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          run_install: false
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Generate
-        run: pnpm run generate
+      - name: lint and type-check
+        run: bun run build lint format typecheck
